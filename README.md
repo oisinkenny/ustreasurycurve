@@ -1,2 +1,2 @@
 # USTreasuryCurve
-Pulls the historical nominal and real yield curve from the US Treasury's website into a Pandas dataframe
+This code pulls all the available nominal and real yield curves from the US Treasury's website into a Pandas dataframe. The nominal rates start on January 2, 1990 and the real rates begin on January 2, 2003. The US Treasury updates these yields daily.
