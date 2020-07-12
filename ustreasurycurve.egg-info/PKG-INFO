@@ -1,0 +1,25 @@
+Metadata-Version: 2.1
+Name: ustreasurycurve
+Version: 0.0.3
+Summary: Pulls all available real and nominal yield curves from the US Treasury's website
+Home-page: https://github.com/oisinkenny/ustreasurycurve
+Author: Oisin Kenny
+Author-email: oisinkenn@gmail.com
+License: UNKNOWN
+Description: # USTreasuryCurve
+        This code pulls all the available nominal and real yield curves from the US Treasury's website into a Pandas dataframe. The nominal rates start on January 2, 1990 and the real rates begin on January 2, 2003. The US Treasury updates these yields daily.
+        
+        #Pull in nominal US Treasury curve
+        
+        ustcurve = ustcurve.nominalRates()
+        
+        #Pull in real US Treasury curve
+        
+        ustrcurve = ustcurve.realRates()
+        
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
