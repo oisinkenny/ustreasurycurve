@@ -4,7 +4,9 @@ This code pulls all the available nominal and real yield curves from the US Trea
 import ustreasurycurve as ustcurve
 
 #Pull in nominal US Treasury curve
+
 ustcurve = ustcurve.nominalRates()
 
 #Pull in real US Treasury curve
+
 ustrcurve = ustcurve.realRates()
