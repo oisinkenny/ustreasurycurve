@@ -1,3 +1,4 @@
+LICENSE
 README.md
 setup.py
 ustreasurycurve/__init__.py
