@@ -12,10 +12,10 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="ustreasurycurve",
-    version="0.0.4",
+    version="0.0.6",
     author="Oisin Kenny",
     author_email="oisinkenn@gmail.com",
-    description="Pulls all available real and nominal yield curves from the US Treasury's website",
+    description="Pulls the real and nominal yield curves from the US Treasury's website for a date range (inclusive)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/oisinkenny/ustreasurycurve",
