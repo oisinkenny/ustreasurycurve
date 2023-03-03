@@ -11,11 +11,11 @@ import pandas as pd
 import numpy as np
 
 
-def realRates(date_start, date_end):
+def realRates(date_start, date_end, requests_verify=True):
     year_list = list(range(int(str(date_start)[:4]), int(str(date_end)[:4]) + 1))
     tbondvalues = []
     for year in year_list:
-        soup = BeautifulSoup(requests.get('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_real_yield_curve&field_tdr_date_value=' + str(year)).text, 'lxml')
+        soup = BeautifulSoup(requests.get('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_real_yield_curve&field_tdr_date_value=' + str(year), verify=requests_verify).text, 'lxml')
         table = soup.find_all('m:properties')
         for i in table:
             try:
