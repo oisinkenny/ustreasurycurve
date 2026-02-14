@@ -5,50 +5,78 @@ Created on Sat Jul 11 14:24:43 2020
 @author: oisin
 """
 
-from bs4 import BeautifulSoup
-import requests
+
+import polars as pl
+from datetime import datetime
 import pandas as pd
-import numpy as np
+import re
 
 
-def nominalRates(date_start, date_end, requests_verify=True):
+def nominalRates(date_start=None, date_end=None):
 
-    year_list = list(range(int(str(date_start)[:4]), int(str(date_end)[:4]) + 1))
-    tbondvalues = []
-    for year in year_list:
-        soup = BeautifulSoup(requests.get('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=' + str(year), verify=requests_verify).text, 'lxml')
-        table = soup.find_all('m:properties')
-        for i in table:
-            try:
-                try:
-                    onemo = i.find('d:bc_1month').text
-                except:
-                    onemo = np.NaN
-                try:
-                    twomo = i.find('d:bc_2month').text
-                except:
-                    twomo = np.NaN
-                try:
-                    threemo = i.find('d:bc_3month').text
-                except:
-                    threemo = np.NaN
-                try:
-                    twentyyr = i.find('d:bc_20year').text
-                except:
-                    twentyyr = np.NaN
-                try:
-                    thirtyyr = i.find('d:bc_30year').text
-                except:
-                    thirtyyr = np.NaN
-                tbondvalues.append([i.find('d:new_date').text[:10], onemo, twomo, threemo, i.find('d:bc_6month').text, i.find('d:bc_1year').text, i.find('d:bc_2year').text, i.find('d:bc_3year').text, i.find('d:bc_5year').text, i.find('d:bc_10year').text, twentyyr, thirtyyr])
-            except:
-                pass
-    ustcurve = pd.DataFrame(tbondvalues, columns=['date', '1m', '2m', '3m', '6m', '1y', '2y', '3y', '5y', '10y', '20y', '30y'])
-    ustcurve.iloc[:, 1:] = ustcurve.iloc[:, 1:].apply(pd.to_numeric)/100
-    ustcurve['date'] = pd.to_datetime(ustcurve['date'])
-    ustcurve.sort_values('date', inplace=True)
-    ustcurve = ustcurve.loc[(ustcurve['date'] >= pd.to_datetime(date_start)) & (ustcurve['date'] <= pd.to_datetime(date_end))].copy()
-    ustcurve.reset_index(drop=True, inplace=True)
-    return ustcurve
+    def sort_period_columns(df):
+        def period_to_months(col):
+            if col == 'date':
+                return -1
+
+            # Extract number and unit using regex
+            match = re.match(r'([\d.]+)([my])', col)
+            if match:
+                value = float(match.group(1))
+                unit = match.group(2)
+                return value if unit == 'm' else value * 12
+            return 0
+
+        sorted_cols = sorted(df.columns, key=period_to_months)
+        return df.select(sorted_cols)
+
+    current_year = datetime.today().strftime('%Y')
+    csv_archive = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rate-archives'
+    z = pd.read_html(csv_archive)
+    base_url = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rate-archives/'
+    z = z[3]
+    latest_filename = z['Download Archive File'].iloc[-1]
+    latest_file_link = fr'{base_url}{latest_filename}'
+    archive = pl.read_csv(latest_file_link)
+    date_col = None
+    for col in archive.columns:
+        if col.lower() == "date":
+            date_col = col
+            break
+    if date_col is None:
+        raise ValueError("No 'date' column found in the dataframe")
+    archive = archive.with_columns(pl.col(date_col).str.to_datetime("%m/%d/%Y"))
+    archive = archive.rename({date_col: 'date'})
+    archive = archive.with_columns(pl.all().exclude(archive.columns[0]).cast(pl.Float64, strict=False))
+    cdfs = []
+    for year in [x for x in range(2023, int(current_year) + 1)]:
+        cdf = pl.read_csv(
+            f'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv')
+        cdfs.append(cdf)
+    current = pl.concat(cdfs, how='diagonal')
+    date_col = None
+    for col in current.columns:
+        if col.lower() == "date":
+            date_col = col
+            break
+    if date_col is None:
+        raise ValueError("No 'date' column found in the dataframe")
+    current = current.with_columns(pl.col(date_col).str.to_datetime("%m/%d/%Y"))
+    current = current.rename({date_col: 'date'})
+    current = current.with_columns(pl.all().exclude(current.columns[0]).cast(pl.Float64, strict=False))
+    current.columns = [col.lower().replace(' month', 'm').replace(' mo', 'm').replace(' yr', 'y') for col in current.columns]
+    archive.columns = [col.lower().replace(' month', 'm').replace(' mo', 'm').replace(' yr', 'y') for col in archive.columns]
+    df = pl.concat([current, archive], how='diagonal')
+    df = df.sort('date')
+    df = sort_period_columns(df)
+    df = df.to_pandas()
+    if date_start is not None:
+        df = df.filter(pl.col('date') >= pl.lit(date_start).str.to_date())
+    if date_end is not None:
+        df = df.filter(pl.col('date') <= pl.lit(date_end).str.to_date())
+    df = df.to_pandas()
+    df = df.dropna(subset=['10y'])
+    return df
+
 
 

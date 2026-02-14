@@ -5,33 +5,72 @@ Created on Sat Jul 11 14:24:43 2020
 @author: oisin
 """
 
-from bs4 import BeautifulSoup
-import requests
+import polars as pl
 import pandas as pd
-import numpy as np
+from datetime import datetime
+import re
 
 
-def realRates(date_start, date_end, requests_verify=True):
-    year_list = list(range(int(str(date_start)[:4]), int(str(date_end)[:4]) + 1))
-    tbondvalues = []
-    for year in year_list:
-        soup = BeautifulSoup(requests.get('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_real_yield_curve&field_tdr_date_value=' + str(year), verify=requests_verify).text, 'lxml')
-        table = soup.find_all('m:properties')
-        for i in table:
-            try:
-                try:
-                    thirtyyr = i.find('d:tc_30year').text
-                except:
-                    thirtyyr = np.NaN
-                tbondvalues.append([i.find('d:new_date').text[:10], i.find('d:tc_5year').text, i.find('d:tc_7year').text, i.find('d:tc_10year').text, i.find('d:tc_20year').text, thirtyyr])
-            except:
-                pass
-    ustrcurve = pd.DataFrame(tbondvalues, columns=['date', '5y', '7y', '10y', '20y', '30y'])
-    ustrcurve.iloc[:, 1:] = ustrcurve.iloc[:, 1:].apply(pd.to_numeric)/100
-    ustrcurve['date'] = pd.to_datetime(ustrcurve['date'])
-    ustrcurve.sort_values('date', inplace=True)
-    ustrcurve = ustrcurve.loc[(ustrcurve['date'] >= pd.to_datetime(date_start)) & (ustrcurve['date'] <= pd.to_datetime(date_end))].copy()
-    ustrcurve.reset_index(drop=True, inplace=True)
-    return ustrcurve
+def realRates(date_start=None, date_end=None):
 
+    def sort_period_columns(df):
+        def period_to_months(col):
+            if col == 'date':
+                return -1
+
+            # Extract number and unit using regex
+            match = re.match(r'([\d.]+)([my])', col)
+            if match:
+                value = float(match.group(1))
+                unit = match.group(2)
+                return value if unit == 'm' else value * 12
+            return 0
+
+        sorted_cols = sorted(df.columns, key=period_to_months)
+        return df.select(sorted_cols)
+
+    current_year = datetime.today().strftime('%Y')
+    csv_archive = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rate-archives'
+    z = pd.read_html(csv_archive)
+    base_url = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rate-archives/'
+    z = z[2]  # real rates
+    latest_filename = z['Download Archive File'].iloc[-1]
+    latest_file_link = fr'{base_url}{latest_filename}'
+    archive = pl.read_csv(latest_file_link)
+    # Find the date column (case-insensitive)
+    date_col = None
+    for col in archive.columns:
+        if col.lower() == "date":
+            date_col = col
+            break
+    if date_col is None:
+        raise ValueError("No 'date' column found in the dataframe")
+    archive = archive.with_columns(pl.col(date_col).str.to_datetime("%m/%d/%Y"))
+    archive = archive.rename({date_col: 'date'})
+    archive = archive.with_columns(pl.all().exclude(archive.columns[0]).cast(pl.Float64, strict=False))
+    cdfs = []
+    for year in [x for x in range(2023, int(current_year) + 1)]:
+        cdf = pl.read_csv(
+            f'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{year}/all?type=daily_treasury_real_yield_curve&field_tdr_date_value={year}&page&_format=csv')
+        cdfs.append(cdf)
+    current = pl.concat(cdfs, how='diagonal')
+    date_col = None
+    for col in current.columns:
+        if col.lower() == "date":
+            date_col = col
+            break
+    if date_col is None:
+        raise ValueError("No 'date' column found in the dataframe")
+    current = current.with_columns(pl.col(date_col).str.to_datetime("%m/%d/%Y"))
+    current = current.rename({date_col: 'date'})
+    current.columns = [col.lower().replace(' month', 'm').replace(' mo', 'm').replace(' yr', 'y') for col in current.columns]
+    archive.columns = [col.lower().replace(' month', 'm').replace(' mo', 'm').replace(' yr', 'y') for col in archive.columns]
+    df = pl.concat([current, archive], how='diagonal')
+    df = df.sort('date')
+    df = sort_period_columns(df)
+    if date_start is not None:
+        df = df.filter(pl.col('date') >= pl.lit(date_start).str.to_date())
+    if date_end is not None:
+        df = df.filter(pl.col('date') <= pl.lit(date_end).str.to_date())
+    return df.to_pandas()
 
